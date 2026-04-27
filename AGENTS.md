@@ -93,17 +93,44 @@ Every browse session — every single one — does this first:
 ## Author yaml contract
 
 The canonical shape is documented in
-`control-center/schemas/author.md`. Two blocks live in the same file:
+`control-center/schemas/author.md` and the matching schema doc lives
+in the lordship repo at `authors/_schema.md`. Three blocks live in
+the same file:
 
-- The Astro-collection block (top level: `name`, `slug`, `title`,
+- The **Astro-collection block** (top level: `name`, `slug`, `title`,
   `bioShort`, `bio`, `specialization`, `topics`, `writingStyle`,
-  `avatar`). The publisher's `astro-github` skill projects this
-  verbatim into `src/content/authors/<slug>.json` (PR's `pr:` block
-  stripped before projection).
-- The `pr:` block (PR-owned): `browserProfileDir`, `avatarSource`,
-  `avatarOverrides`, `social.<platform>` (handle, credEnvKey,
+  `avatar`). The `author-sync` skill projects this verbatim into
+  `src/content/authors/<slug>.json` on each consumer site (the `pr:`
+  and `images:` blocks are stripped before projection).
+- The **`images:` block** (PR-owned, projected): the multi-image
+  asset package. Required `avatar` (square 512×512); optional `hero`
+  (1600×600 banner), `og` (1200×630 social card), `gallery` (ordered
+  list of 1024×1024 portrait paths). Every value is a public URL on
+  the consumer site (`/images/authors/<slug>-<variant>.webp`); the
+  underlying source files live in
+  `/lordship/authors/avatars/<slug>/`. The author-sync skill copies
+  them into the consumer site's `public/images/authors/`.
+- The **`pr:` block** (PR-owned, NOT projected): `browserProfileDir`,
+  `avatarSource`, `social.<platform>` (handle, credEnvKey,
   lastSnapshotAt, etc.), `crossPostDefaults`, `authorisedDomains`,
-  `createdAt`, `updatedAt`.
+  `createdAt`, `updatedAt`, `lastAssetRefreshAt`.
+
+### images: block shape
+
+```yaml
+images:
+  avatar: "/images/authors/elena-moretti.webp"
+  hero:   "/images/authors/elena-moretti-hero.webp"
+  og:     "/images/authors/elena-moretti-og.webp"
+  gallery:
+    - "/images/authors/elena-moretti-gallery-01.webp"
+    - "/images/authors/elena-moretti-gallery-02.webp"
+    - "/images/authors/elena-moretti-gallery-03.webp"
+```
+
+Backwards compat: the legacy top-level `avatar:` field stays as the
+mirror of `images.avatar` so existing consumers keep working. New
+sites should read `images.*` directly.
 
 When `author-yaml-write` updates the file:
 
@@ -116,8 +143,61 @@ When `author-yaml-write` updates the file:
   high-entropy literal in the value); fails with
   `error: secret-leak-attempt`.
 - Bumps `pr.updatedAt` to today.
-- Writes back, then emits a unified diff to
-  `/shared/runs/<run>/author-yaml.diff` so the lord can audit.
+- Stages the updated yaml under
+  `/shared/runs/<run>/author-yaml/<slug>.yaml` (NOT directly to
+  `/lordship/authors/`, which is read-only at runtime). The
+  `lordship-author-pr` skill picks the staged yaml up and opens a
+  PR on the lordship repo carrying both the yaml change and any
+  asset binaries staged in
+  `/shared/runs/<run>/author-assets/<slug>/`.
+
+## Asset workflow (images: block)
+
+When the manifest action is `asset-refresh` or the lord asks for a
+fresh author with images:
+
+1. **Plan** the variants needed from the manifest (default: avatar +
+   hero + og + 3-frame gallery if not specified).
+2. **Generate** each variant via `image_generate`. Prompts include
+   the author's `bioShort` + `writingStyle` + the variant's framing
+   (square headshot for avatar, wide banner for hero, etc.). Lord
+   may pass an explicit prompt/style override in the manifest.
+3. **Transcode** every output to WebP at the variant's required
+   dimensions before it lands on disk:
+
+   | variant   | size       | quality | aspect |
+   |-----------|------------|---------|--------|
+   | avatar    | 512×512    | 82      | square |
+   | hero      | 1600×600   | 78      | 8:3    |
+   | og        | 1200×630   | 78      | 1.9:1  |
+   | gallery/N | 1024×1024  | 80      | square |
+
+   Use Pillow + `webp` save with `method=6` for size; never ship a
+   PNG/JPG.
+4. **Stage** under `/shared/runs/<run>/author-assets/<slug>/<variant>.webp`
+   (gallery items: `gallery/01.webp`, `02.webp`, …). NEVER write
+   directly under `/lordship/authors/avatars/<slug>/` — that path is
+   read-only at runtime.
+5. **Update the yaml** under `/shared/runs/<run>/author-yaml/<slug>.yaml`
+   so the `images:` block points at the new public URLs. Bump
+   `pr.lastAssetRefreshAt`.
+6. **Open the PR** via `lordship-author-pr` (see
+   `skills/lordship-author-pr/SKILL.md`) — branch
+   `assets/<slug>-<run>` on the lordship repo, body lists the
+   variants, attachments are the staged WebPs and the yaml diff.
+7. **Wait** for the lordship PR to merge. Do not run `author-sync`
+   yourself — the orchestrator (or operator) triggers that after the
+   merge so consumer sites get the new variants.
+
+When the manifest action is `cross-post`, pick the image at post
+time:
+
+- Profile picture update → `images.avatar`.
+- FB page cover update → `images.hero`.
+- Link card on FB/X/LinkedIn → `images.og` if present, else
+  `images.avatar`.
+- Inline post imagery → next item in `images.gallery` (round-robin;
+  track in `pr.lastGalleryIndex`).
 
 ## Invariants
 
