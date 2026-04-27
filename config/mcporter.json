@@ -1,0 +1,7 @@
+{
+  "mcpServers": {},
+  "comment": "The PR agent works from inbox manifests + the per-author yaml + the chromium profile bound at /tmp/openclaw-home. No MCPs in the baseline; lordships may overlay a read-only social-analytics MCP later.",
+  "imports": [
+    "claude-code"
+  ]
+}

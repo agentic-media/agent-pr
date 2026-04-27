@@ -1,0 +1,20 @@
+{
+  "id": "pr",
+  "name": "PR",
+  "identity": {
+    "name": "PR"
+  },
+  "subagents": {
+    "allowAgents": []
+  },
+  "tools": {
+    "alsoAllow": [
+      "web_fetch",
+      "browser",
+      "exec",
+      "image_generate",
+      "agents_list",
+      "message"
+    ]
+  }
+}
