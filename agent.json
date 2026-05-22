@@ -16,5 +16,12 @@
       "agents_list",
       "message"
     ]
+  },
+  "sandbox": {
+    "docker": {
+      "env": {
+        "LORDSHIP_AGENT_ROLE": "pr"
+      }
+    }
   }
 }
