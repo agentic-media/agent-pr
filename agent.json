@@ -20,8 +20,13 @@
   "sandbox": {
     "docker": {
       "env": {
-        "LORDSHIP_AGENT_ROLE": "pr"
-      }
+        "LORDSHIP_AGENT_ROLE": "pr",
+        "LORDSHIP_CREDS_DIR": "/role-creds"
+      },
+      "binds": [
+        "/lordship/.role-creds/pr:/role-creds:ro",
+        "/lordship/domains:/lordship/domains:ro"
+      ]
     }
   }
 }
